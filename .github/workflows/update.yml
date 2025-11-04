@@ -33,7 +33,7 @@ jobs:
         env:
           ENDPOINT_TOKEN: ${{ secrets.ENDPOINT_TOKEN }}   # set this in Settings ▸ Secrets ▸ Actions
           # Optional emergency switch ONLY if the origin’s TLS is broken:
-          # ALLOW_INSECURE_FETCH: "1"
+          ALLOW_INSECURE_FETCH: "1"
         run: python scripts/ingest_and_build.py
 
       - name: Commit & push if anything changed

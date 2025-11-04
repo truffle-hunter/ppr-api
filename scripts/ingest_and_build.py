@@ -1,3 +1,4 @@
+TLS_VERIFIED = False  # set to False if we use insecure fallback
 import subprocess, tempfile
 import certifi
 from requests.exceptions import SSLError, RequestException

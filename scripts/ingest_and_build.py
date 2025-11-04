@@ -45,23 +45,17 @@ def load_or_make_token():
     return t
 
 def fetch_zip():
-    """Secure-first download with explicit CA and controlled fallback."""
+    import certifi, subprocess, tempfile, io, os, requests
+    from requests.exceptions import SSLError, RequestException
     ca = certifi.where()
-    headers = {"User-Agent": "ppr-ingest/1.0 (+https://github.com/<you>/ppr-api)"}
 
-    # Primary: requests with explicit CA
+    # secure attempt with requests
     try:
-        r = requests.get(
-            PPR_ZIP_URL,
-            headers=headers,
-            verify=ca,
-            timeout=180,
-            allow_redirects=True,
-        )
+        r = requests.get(PPR_ZIP_URL, verify=ca, timeout=180, allow_redirects=True)
         r.raise_for_status()
         return io.BytesIO(r.content)
     except SSLError:
-        print("requests SSLError; trying curl with CA bundle…", flush=True)
+        # secure attempt with curl + CA
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp_path = tmp.name
         try:
@@ -70,24 +64,22 @@ def fetch_zip():
                  "--max-time","180","--cacert",ca,"-o",tmp_path,PPR_ZIP_URL],
                 check=True
             )
-            data = open(tmp_path,"rb").read()
-            os.unlink(tmp_path)
+            data = open(tmp_path,"rb").read(); os.unlink(tmp_path)
             return io.BytesIO(data)
         except subprocess.CalledProcessError:
+            # 🔻 insecure fallback only when explicitly allowed
             if os.environ.get("ALLOW_INSECURE_FETCH") == "1":
-                print("curl --insecure fallback enabled by ALLOW_INSECURE_FETCH=1")
                 subprocess.run(
                     ["curl","--fail","--location","--retry","5","--retry-all-errors",
                      "--max-time","180","-k","-o",tmp_path,PPR_ZIP_URL],
                     check=True
                 )
-                data = open(tmp_path,"rb").read()
-                os.unlink(tmp_path)
+                # ✅ set the flag *inside* the insecure branch, after success
+                global TLS_VERIFIED
+                TLS_VERIFIED = False
+                data = open(tmp_path,"rb").read(); os.unlink(tmp_path)
                 return io.BytesIO(data)
             raise
-    except RequestException as e:
-        print(f"requests error: {e}")
-        raise
 
 def read_all_csvs(zbytes):
     frames = []

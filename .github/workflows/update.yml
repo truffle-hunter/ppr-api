@@ -1,0 +1,40 @@
+name: Update PPR & Publish
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 2 * * *"   # daily at 02:15 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Build API
+        env:
+          ENDPOINT_TOKEN: ${{ secrets.ENDPOINT_TOKEN }}  # optional but recommended
+        run: python scripts/ingest_and_build.py
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "Auto-update $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            git push
+          else
+            echo "No changes."
+          fi

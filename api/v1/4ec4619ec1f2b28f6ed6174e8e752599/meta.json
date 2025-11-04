@@ -1,0 +1,104 @@
+{
+  "updated": "2025-11-04T22:08:37Z",
+  "count_years": 16,
+  "years": [
+    "2010",
+    "2011",
+    "2012",
+    "2013",
+    "2014",
+    "2015",
+    "2016",
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+  ],
+  "shards": [
+    {
+      "path": "shards/by-year/2010.ndjson",
+      "sha256": "105a31e8361cf913bc2a242bf6d2cab53aa951c0c97b3c7b938538acebb13098",
+      "bytes": 4476151
+    },
+    {
+      "path": "shards/by-year/2011.ndjson",
+      "sha256": "7b3547cd7e16a38387b32b4b226988f13d2dcc02b806cdec14d3fb618e840b1b",
+      "bytes": 3929349
+    },
+    {
+      "path": "shards/by-year/2012.ndjson",
+      "sha256": "fd4f11915110a6e54aec35dec0879eaa4bdfd0e78aa1e2c4307fd7ba8d59dac2",
+      "bytes": 5418829
+    },
+    {
+      "path": "shards/by-year/2013.ndjson",
+      "sha256": "f4f23803a59099a012b1adbc6849e91b8cc85d6c9135e5b4ee3dc7fe7d5e5e19",
+      "bytes": 6471845
+    },
+    {
+      "path": "shards/by-year/2014.ndjson",
+      "sha256": "271d003feb7643e218b2aef089d215f391dc8b56780fa10145513f35c81cbee0",
+      "bytes": 9492417
+    },
+    {
+      "path": "shards/by-year/2015.ndjson",
+      "sha256": "17baf8ec5865a7cc9166b1f06aa1bd08c5ca3f023d66bbd26607ce1f3e3d1210",
+      "bytes": 10678969
+    },
+    {
+      "path": "shards/by-year/2016.ndjson",
+      "sha256": "50a48588ee8398e6b37fe218b367a3815f0395bd9d515423b03e26812526f3b3",
+      "bytes": 10864431
+    },
+    {
+      "path": "shards/by-year/2017.ndjson",
+      "sha256": "269451800a5eacb745480b5c1fb3d29de3558792951edc829d22da1b1ea83bf9",
+      "bytes": 11974620
+    },
+    {
+      "path": "shards/by-year/2018.ndjson",
+      "sha256": "ec5ed68e04f82d2bd0afa5542f568080a6ff2bab3fdb1626f0af2c42439c5e69",
+      "bytes": 12493201
+    },
+    {
+      "path": "shards/by-year/2019.ndjson",
+      "sha256": "a36b1b41d3c58f8f42329c12e87145c82aabc7f5b814e1e1b449b4f89d35f44a",
+      "bytes": 12847676
+    },
+    {
+      "path": "shards/by-year/2020.ndjson",
+      "sha256": "a6b9880f186bd62446332e334400c8a2007e25faa6b305a87214045165c61454",
+      "bytes": 10770912
+    },
+    {
+      "path": "shards/by-year/2021.ndjson",
+      "sha256": "57f06841f2e02f10391d26923d66d4d920023f4e512e075afb4c8172b1b50226",
+      "bytes": 12959451
+    },
+    {
+      "path": "shards/by-year/2022.ndjson",
+      "sha256": "12dc1ea3a3873385fdfa0b955d812a67871139107dd7a0ce7f4565ac3b481b0a",
+      "bytes": 13643890
+    },
+    {
+      "path": "shards/by-year/2023.ndjson",
+      "sha256": "cdd72cdc2886ffef93c9f4af62ae967ce697a75af6935ea6951ec43ff33b4cd3",
+      "bytes": 13768835
+    },
+    {
+      "path": "shards/by-year/2024.ndjson",
+      "sha256": "a9bef2fcbdb56708f4b45653e2f022168bbb8aee09b51b172410619622d1f994",
+      "bytes": 13367734
+    },
+    {
+      "path": "shards/by-year/2025.ndjson",
+      "sha256": "12b91b8d1fe0f8077dc2364ce5e1d3b2a7d93a5b053f2b46462b5fe9199220f8",
+      "bytes": 9906292
+    }
+  ]
+}

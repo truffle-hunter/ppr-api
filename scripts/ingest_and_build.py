@@ -1,3 +1,6 @@
+import subprocess, tempfile
+import certifi
+from requests.exceptions import SSLError, RequestException
 import os, io, json, re, zipfile, hashlib, uuid, glob, time
 from datetime import datetime, timezone
 import requests

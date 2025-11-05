@@ -17,9 +17,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # First try verified TLS; if the host's chain is broken, allow insecure fallback.
+      # Try verified TLS first; if the host's chain is broken, allow insecure fallback.
       ALLOW_INSECURE_FETCH: "true"
-      # Enabled: script will abort immediately if a parsed price doesn't match the expected value.
+      # Script aborts immediately if a parsed price doesn't match the expected integer from the original text.
       STRICT_PRICE_VALIDATION: "true"
     steps:
       - name: Checkout

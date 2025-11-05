@@ -16,6 +16,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Enable insecure TLS fallback only if the source site has a broken chain.
+      # The script first tries a verified TLS fetch; if it fails, this allows a retry without verification.
+      ALLOW_INSECURE_FETCH: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,18 +33,13 @@ jobs:
 
       - name: Show script checksum (debug)
         run: |
-          if [ -f scripts/ingest_and_build.py ]; then
-            sha256sum scripts/ingest_and_build.py || shasum -a 256 scripts/ingest_and_build.py
-            python --version
-          else
-            echo "scripts/ingest_and_build.py not found" >&2
-            exit 1
-          fi
+          sha256sum scripts/ingest_and_build.py || shasum -a 256 scripts/ingest_and_build.py
+          python --version
 
       - name: Sanity-check price parsing
         run: |
           python - <<'PY'
-          import importlib.util, pathlib, re, sys
+          import importlib.util, pathlib, sys
           p = pathlib.Path("scripts/ingest_and_build.py")
           spec = importlib.util.spec_from_file_location("ing", p)
           m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)

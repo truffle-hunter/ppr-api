@@ -86,56 +86,34 @@ def parse_date(d: str) -> tuple[str,int]:
 
 def parse_price(p: str | None) -> tuple[int | None, str]:
     """
-    Return (euros_without_cents, original_text), robust across US/EU formats.
+    Return (euros_without_cents, original_text).
 
-    Rules:
-      - Strip euro symbols/mojibake and spaces.
-      - If both '.' and ',' appear, the **rightmost** is decimal; drop the fraction.
-      - If only one of '.' or ',' appears, treat it as decimal IFF there are 1–2 digits after it.
-      - Otherwise, treat separators as thousands. Output is an int (no cents).
+    Logic:
+      - Strip everything except digits, commas, and dots for detection.
+      - If the cleaned string ends with a separator followed by EXACTLY 2 digits
+        (e.g., ",00" or ".02"), treat those two digits as cents and drop them.
+      - Otherwise, treat all separators as thousands and keep all digits.
     """
     import re
     if p is None:
         return None, ""
     original = (p or "").strip()
 
-    s = original
-    for art in ("€", "â‚¬", "Ä", "EUR", "eur"):
-        s = s.replace(art, "")
-    s = s.replace("\xa0", "").replace(" ", "")
-    s = re.sub(r"[^0-9\.,-]", "", s)
-    if not s:
+    # Keep only digits and separators for detection
+    cleaned = re.sub(r"[^\d\.,]", "", original.replace("\xa0", "").replace(" ", ""))
+
+    # Just the digits, used to build the integer result
+    digits_only = re.sub(r"\D", "", cleaned)
+    if not digits_only:
         return None, original
 
-    has_dot = "." in s
-    has_comma = "," in s
-
-    # Determine integer part by identifying a decimal separator only when it looks like cents.
-    integer_part = s
-    if has_dot and has_comma:
-        idx = max(s.rfind("."), s.rfind(","))
-        integer_part = s[:idx]
-    elif has_dot or has_comma:
-        sep = "." if has_dot else ","
-        idx = s.rfind(sep)
-        digits_after = len(re.sub(r"[^0-9]", "", s[idx+1:]))
-        if 1 <= digits_after <= 2:
-            integer_part = s[:idx]
-        else:
-            integer_part = s  # it's just a thousands separator
-
-    # Keep only digits (and an optional leading minus, though negatives are unlikely here)
-    integer_digits = re.sub(r"[^0-9-]", "", integer_part)
-    if integer_digits in ("", "-"):
-        return None, original
-
-    try:
-        euros = int(integer_digits)
-    except ValueError:
-        euros = None
+    # If there are cents (…,[.,]dd at the very end), drop the last two digits
+    if re.search(r"[.,]\d{2}\s*$", cleaned):
+        euros = int(digits_only[:-2]) if len(digits_only) > 2 else 0
+    else:
+        euros = int(digits_only)
 
     return euros, original
-
 
 
 def sanitize_filename(s: str) -> str:

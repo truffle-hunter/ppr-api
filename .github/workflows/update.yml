@@ -3,7 +3,8 @@ name: Update PPR JSON
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 6 * * *" # daily at 06:17 UTC
+    # Daily at 06:17 UTC
+    - cron: "17 6 * * *"
 
 permissions:
   contents: write
@@ -15,8 +16,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ALLOW_INSECURE_FETCH: "true" # you mentioned enabling this
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,11 +26,43 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Install deps (optional)
+      - name: Show script checksum (debug)
         run: |
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f scripts/ingest_and_build.py ]; then
+            sha256sum scripts/ingest_and_build.py || shasum -a 256 scripts/ingest_and_build.py
+            python --version
+          else
+            echo "scripts/ingest_and_build.py not found" >&2
+            exit 1
+          fi
+
+      - name: Sanity-check price parsing
+        run: |
+          python - <<'PY'
+          import importlib.util, pathlib, re, sys
+          p = pathlib.Path("scripts/ingest_and_build.py")
+          spec = importlib.util.spec_from_file_location("ing", p)
+          m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          tests = {
+            "Ä343,000.00": 343000,
+            "Ä154,185.02": 154185,
+            "172,500": 172500,
+            "€ 1.234.567,89": 1234567,
+            "343.000": 343000,
+            "€2,950": 2950,
+            "2950": 2950,
+          }
+          failures = 0
+          for s, want in tests.items():
+            euros, _ = m.parse_price(s)
+            euros = m.fix_hundred_inflation(euros, s)
+            print(f"{s!r} -> {euros}")
+            if euros != want:
+              print(f"FAIL: expected {want}, got {euros} for {s!r}", file=sys.stderr)
+              failures += 1
+          sys.exit(1 if failures else 0)
+          PY
 
       - name: Ingest and build artifacts
         run: python scripts/ingest_and_build.py

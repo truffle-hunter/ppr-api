@@ -17,9 +17,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # Enable insecure TLS fallback only if the source site has a broken chain.
-      # The script first tries verified TLS; on failure, this allows a retry without verification.
+      # First try verified TLS; if the host's chain is broken, allow insecure fallback.
       ALLOW_INSECURE_FETCH: "true"
+      # Enabled: script will abort immediately if a parsed price doesn't match the expected value.
+      STRICT_PRICE_VALIDATION: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,10 +37,10 @@ jobs:
           sha256sum scripts/ingest_and_build.py || shasum -a 256 scripts/ingest_and_build.py
           python --version
 
-      - name: Sanity-check price parsing
+      - name: Quick unit sanity for parser
         run: |
           python - <<'PY'
-          import importlib.util, pathlib, sys
+          import pathlib, importlib.util, sys
           p = pathlib.Path("scripts/ingest_and_build.py")
           spec = importlib.util.spec_from_file_location("ing", p)
           m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -54,11 +55,10 @@ jobs:
           }
           failures = 0
           for s, want in tests.items():
-            euros, _ = m.parse_price(s)
-            print(f"{s!r} -> {euros}")
-            if euros != want:
-              print(f"FAIL: expected {want}, got {euros} for {s!r}", file=sys.stderr)
-              failures += 1
+            got, _ = m.parse_price(s)
+            print(f"{s!r} -> {got}")
+            if got != want:
+              print(f"FAIL: expected {want}, got {got}", file=sys.stderr); failures += 1
           sys.exit(1 if failures else 0)
           PY
 

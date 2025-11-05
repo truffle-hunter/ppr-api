@@ -1,5 +1,5 @@
 {
-  "updated": "2025-11-05T02:50:35Z",
+  "updated": "2025-11-05T06:36:43Z",
   "count_years": 16,
   "years": [
     "2010",
@@ -22,83 +22,88 @@
   "shards": [
     {
       "path": "shards/by-year/2010.ndjson",
-      "sha256": "105a31e8361cf913bc2a242bf6d2cab53aa951c0c97b3c7b938538acebb13098",
-      "bytes": 4476151
+      "sha256": "f86f19921883bc2421abd8affa32e121ef0563dc414ede1761f55207cc63b37a",
+      "bytes": 4557953
     },
     {
       "path": "shards/by-year/2011.ndjson",
-      "sha256": "7b3547cd7e16a38387b32b4b226988f13d2dcc02b806cdec14d3fb618e840b1b",
-      "bytes": 3929349
+      "sha256": "41d83dce5d7a05fde4481ad4ab7c4a5c36292ccf74ff002b1d3e7bfb40e7ca4b",
+      "bytes": 3999334
     },
     {
       "path": "shards/by-year/2012.ndjson",
-      "sha256": "fd4f11915110a6e54aec35dec0879eaa4bdfd0e78aa1e2c4307fd7ba8d59dac2",
-      "bytes": 5418829
+      "sha256": "9608163a8cf47c7cfd3da29faf3719f099ff0de390e83b5bdde25a1a8a7e462d",
+      "bytes": 5513088
     },
     {
       "path": "shards/by-year/2013.ndjson",
-      "sha256": "f4f23803a59099a012b1adbc6849e91b8cc85d6c9135e5b4ee3dc7fe7d5e5e19",
-      "bytes": 6471845
+      "sha256": "b40b49a15139633518e91b68f278a81b18b21ac4b776a117630ce5f4bf989287",
+      "bytes": 6582451
     },
     {
       "path": "shards/by-year/2014.ndjson",
-      "sha256": "271d003feb7643e218b2aef089d215f391dc8b56780fa10145513f35c81cbee0",
-      "bytes": 9492417
+      "sha256": "eda13066779c8bca1dc36f2b2023140c8720d2ab8b9a7d69c04e209e1bde09b5",
+      "bytes": 9654117
     },
     {
       "path": "shards/by-year/2015.ndjson",
-      "sha256": "17baf8ec5865a7cc9166b1f06aa1bd08c5ca3f023d66bbd26607ce1f3e3d1210",
-      "bytes": 10678969
+      "sha256": "aa4573c8974d8ccf519667dd6f69bd1125b80cd81948fb2ff531e11bb1b45b4d",
+      "bytes": 10862772
     },
     {
       "path": "shards/by-year/2016.ndjson",
-      "sha256": "50a48588ee8398e6b37fe218b367a3815f0395bd9d515423b03e26812526f3b3",
-      "bytes": 10864431
+      "sha256": "a6a9a7f44268468e059be4f724d2893043fe237d16e75bb5adce6380cc90abb4",
+      "bytes": 11053438
     },
     {
       "path": "shards/by-year/2017.ndjson",
-      "sha256": "269451800a5eacb745480b5c1fb3d29de3558792951edc829d22da1b1ea83bf9",
-      "bytes": 11974620
+      "sha256": "b84102564731f16e0293855a1643e1091220b24e23cc198668b5ac786a714dca",
+      "bytes": 12185697
     },
     {
       "path": "shards/by-year/2018.ndjson",
-      "sha256": "ec5ed68e04f82d2bd0afa5542f568080a6ff2bab3fdb1626f0af2c42439c5e69",
-      "bytes": 12493201
+      "sha256": "b7ac5d6ff0f02f10edbb2928abf9bc70297331852c0f44f5f95cbe93576f7ed3",
+      "bytes": 12715540
     },
     {
       "path": "shards/by-year/2019.ndjson",
-      "sha256": "a36b1b41d3c58f8f42329c12e87145c82aabc7f5b814e1e1b449b4f89d35f44a",
-      "bytes": 12847676
+      "sha256": "583169b6867e1168a0d562d40a3daad407a729bfef48a574e4419eb95c105e6e",
+      "bytes": 13078100
     },
     {
       "path": "shards/by-year/2020.ndjson",
-      "sha256": "a6b9880f186bd62446332e334400c8a2007e25faa6b305a87214045165c61454",
-      "bytes": 10770912
+      "sha256": "7afa86be129641428b2e1a0997028b54559c5bd8a337f506f5dead1992d32ec6",
+      "bytes": 10965014
     },
     {
       "path": "shards/by-year/2021.ndjson",
-      "sha256": "57f06841f2e02f10391d26923d66d4d920023f4e512e075afb4c8172b1b50226",
-      "bytes": 12959451
+      "sha256": "aaca4e1ecf41440c00822c1700a8ede176b4ba34c6eb330b7bee5620a2e2e7c0",
+      "bytes": 13285031
     },
     {
       "path": "shards/by-year/2022.ndjson",
-      "sha256": "12dc1ea3a3873385fdfa0b955d812a67871139107dd7a0ce7f4565ac3b481b0a",
-      "bytes": 13643890
+      "sha256": "7d0e46392f3a8d4a51840db1b7ef51dc083d9428c8c890ab833b32d3fb1ae16f",
+      "bytes": 14036974
     },
     {
       "path": "shards/by-year/2023.ndjson",
-      "sha256": "cdd72cdc2886ffef93c9f4af62ae967ce697a75af6935ea6951ec43ff33b4cd3",
-      "bytes": 13768835
+      "sha256": "814d6281f49487895cea13ef4d8914195e7fc214d8f344f61dfbc478e94b443f",
+      "bytes": 14165176
     },
     {
       "path": "shards/by-year/2024.ndjson",
-      "sha256": "a9bef2fcbdb56708f4b45653e2f022168bbb8aee09b51b172410619622d1f994",
-      "bytes": 13367734
+      "sha256": "5a079f9a78e5cfb286dc33e3fbc6bab884fd9151dec82e5e80335d5f87276446",
+      "bytes": 13750920
     },
     {
       "path": "shards/by-year/2025.ndjson",
-      "sha256": "12b91b8d1fe0f8077dc2364ce5e1d3b2a7d93a5b053f2b46462b5fe9199220f8",
-      "bytes": 9906292
+      "sha256": "54d42ea32536fb6c777c9c38ff2ef9158b8bf7853fb3cc469d741695c3109379",
+      "bytes": 10190153
     }
-  ]
+  ],
+  "source": {
+    "url": "https://www.propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/Downloads/PPR-ALL.zip/$FILE/PPR-ALL.zip",
+    "tls_verified": false,
+    "sha256": "00a59802347f4b6952b735f0679158251a8b2878ca6c48e141eb3fcdee0c9ff1"
+  }
 }

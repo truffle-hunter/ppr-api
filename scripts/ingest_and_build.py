@@ -84,29 +84,53 @@ def parse_date(d: str) -> tuple[str,int]:
     obj = dt.datetime.strptime(d, "%d/%m/%Y").date()
     return obj.isoformat(), obj.year
 
-def parse_price(p: str | None) -> tuple[float | None, str]:
+def parse_price(p: str | None) -> tuple[int | None, str]:
+    """
+    Parse a price string and return (euros_without_cents, original_text).
+    Examples:
+      "Ä145,000.00" -> (145000, "Ä145,000.00")
+      "Ä154,185.02" -> (154185, "Ä154,185.02")
+      "€ 1.234.567,89" -> (1234567, "€ 1.234.567,89")
+    """
     if p is None:
         return None, ""
     original = (p or "").strip()
-    tmp = original
-    for art in EURO_ARTIFACTS:
-        tmp = tmp.replace(art, "")
-    tmp = tmp.replace("\xa0","").replace(" ","")
-    tmp = re.sub(r"[^0-9\.,-]","", tmp)
 
+    # Remove euro artifacts and whitespace
+    tmp = original
+    for art in ("€", "â‚¬", "Ä", "EUR", "eur"):
+        tmp = tmp.replace(art, "")
+    tmp = tmp.replace("\xa0", "").replace(" ", "")
+
+    # Keep only digits, '.' and ','
+    import re
+    tmp = re.sub(r"[^0-9\.,-]", "", tmp)
+
+    # Normalize separators:
+    # - If both '.' and ',' exist, treat ',' as thousands and '.' as decimal (matches PPR like "154,185.02").
+    # - If only ',' exists, treat it as decimal.
+    # - Else, ',' is thousands and '.' is decimal (or integer).
     if "." in tmp and "," in tmp:
-        tmp = tmp.replace(",", "")
+        tmp = tmp.replace(",", "")          # remove thousands
+        # now '.' is decimal
     elif "," in tmp and "." not in tmp:
         tmp = tmp.replace(".", "")
-        tmp = tmp.replace(",", ".")
+        tmp = tmp.replace(",", ".")         # make decimal '.'
     else:
-        tmp = tmp.replace(",", "")
+        tmp = tmp.replace(",", "")          # remove thousands if any
 
+    # Drop the cents (anything after the decimal point)
+    if "." in tmp:
+        tmp = tmp.split(".", 1)[0]
+
+    # Convert to integer euros
     try:
-        num = float(tmp) if tmp else None
+        euros = int(tmp) if tmp else None
     except ValueError:
-        num = None
-    return num, original
+        euros = None
+
+    return euros, original
+
 
 def sanitize_filename(s: str) -> str:
     s = (s or "").strip().lower().replace(" ", "_")

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
 Ingest the Irish Property Price Register, normalize it, and write outputs to:
-  - shards/by-year/<YYYY>.ndjson (auto-rotates to _partNN under ~90MB)
-  - api/v1/<ZIP_MD5>/summary.json
-  - api/v1/<ZIP_MD5>/manifest.json
+  - api/v1/<SNAPSHOT_ID>/shards/by-year/<YYYY>.ndjson (auto-rotates to _partNN under ~90MB)
+  - api/v1/<SNAPSHOT_ID>/summary.json
+  - api/v1/<SNAPSHOT_ID>/manifest.json
 
-No by-county outputs and no all.ndjson (stay under GitHub's 100MB file limit).
-Updates ./meta.json and prunes older api/v1 snapshots (keeps 3).
+Notes
+- SNAPSHOT_ID comes from env ENDPOINT_TOKEN; if not set, falls back to ZIP MD5.
+- No by-county outputs and no all.ndjson (keep files <100MB).
+- Runtime checkpoint aborts run if any price is misparsed.
+- Optional insecure TLS fallback when ALLOW_INSECURE_FETCH=true or --insecure.
 
-Standard-library only. Optional insecure TLS fallback when
-environment variable ALLOW_INSECURE_FETCH=true or --insecure is passed.
+Standard library only.
 """
 
 from __future__ import annotations
@@ -34,7 +36,6 @@ PPR_URL = "https://www.propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/
 
 ROOT = Path(__file__).resolve().parent.parent
 API_DIR = ROOT / "api" / "v1"
-SHARDS_DIR = ROOT / "shards" / "by-year"
 META_PATH = ROOT / "meta.json"
 KEEP_SNAPSHOTS = 3
 
@@ -78,7 +79,6 @@ def build_field_map(headers: List[str]) -> Dict[str, str]:
     return mapping
 
 def to_bool_int(s: Optional[str]) -> Optional[int]:
-    """Return 1/0 from Yes/No-like values; None if unknown."""
     if s is None:
         return None
     v = (s or "").strip().lower()
@@ -105,8 +105,8 @@ def _clean_price_text(s: str) -> str:
 
 def expected_whole_euros_from_text(price_text: Optional[str]) -> Optional[int]:
     """
-    Deterministic rule to compute expected whole-euro value directly from the ORIGINAL text:
-      - Remove spaces/NBSP and euro/mojibake.
+    Deterministic rule from ORIGINAL text:
+      - Strip spaces/NBSP + euro/mojibake.
       - If it ENDS with [.,]dd → those are cents → drop last two digits from digits-only string.
       - Else → separators are thousands → expected = digits-only integer.
     """
@@ -122,21 +122,12 @@ def expected_whole_euros_from_text(price_text: Optional[str]) -> Optional[int]:
     return int(digits)
 
 def parse_price(p: Optional[str]) -> Tuple[Optional[int], str]:
-    """
-    Parse whole euros using the same deterministic rule as `expected_whole_euros_from_text`,
-    and return (euros_without_cents, original_text).
-    """
     if p is None:
         return None, ""
     original = (p or "").strip()
     return expected_whole_euros_from_text(original), original
 
 def validate_price_or_die(price_eur: Optional[int], price_text: Optional[str], ctx: str) -> None:
-    """
-    Runtime checkpoint: compute expected euros from original text and ensure it matches
-    what we parsed. If not, raise with full context so the CI run fails immediately.
-    (Avoid backslashes inside f-strings to satisfy Python parser.)
-    """
     expected = expected_whole_euros_from_text(price_text)
     if expected is None:
         return
@@ -153,10 +144,6 @@ def validate_price_or_die(price_eur: Optional[int], price_text: Optional[str], c
         )
 
 # ---------- /PRICE PARSING + CHECKPOINT ----------
-
-def sanitize_filename(s: str) -> str:
-    s = (s or "").strip().lower().replace(" ", "_")
-    return re.sub(r"[^a-z0-9_\-]", "", s) or "unknown"
 
 class RotatingNDJSONWriter:
     """
@@ -226,8 +213,8 @@ def md5_file(path: Path) -> str:
 
 def download_zip(tmp_path: Path, insecure_env: bool = False) -> None:
     """
-    Try a normal verified TLS fetch first. If it fails due to SSL certificate
-    issues and insecure_env=True, retry with an unverified SSL context.
+    Try verified TLS first. If it fails and insecure_env=True, retry with an
+    unverified SSL context (to work around a broken chain on the source host).
     """
     req = urllib.request.Request(
         PPR_URL,
@@ -244,7 +231,6 @@ def download_zip(tmp_path: Path, insecure_env: bool = False) -> None:
         with urllib.request.urlopen(req, timeout=60, context=context) as r, tmp_path.open("wb") as f:
             shutil.copyfileobj(r, f)
 
-    # Attempt with verified context
     try:
         _fetch(context=ssl.create_default_context())
         return
@@ -261,7 +247,7 @@ def download_zip(tmp_path: Path, insecure_env: bool = False) -> None:
 def prune_old_snapshots(api_dir: Path, keep: int, keep_id: str) -> None:
     items = []
     for p in api_dir.iterdir():
-        if p.is_dir() and re.fullmatch(r"[0-9a-fA-F]{32}", p.name):
+        if p.is_dir() and re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{32}", p.name):
             items.append((p.stat().st_mtime, p.name, p))
     items.sort(reverse=True)
     keep_names = set([keep_id] + [name for _, name, _ in items[:keep]])
@@ -281,15 +267,21 @@ def main() -> None:
 
     ROOT.mkdir(parents=True, exist_ok=True)
     API_DIR.mkdir(parents=True, exist_ok=True)
-    SHARDS_DIR.mkdir(parents=True, exist_ok=True)
 
     tmp_zip = ROOT / ".tmp-ppr.zip"
     log("Downloading ZIP…")
     download_zip(tmp_zip, insecure_env=allow_insecure)
     zip_md5 = md5_file(tmp_zip)
-    snapshot_dir = API_DIR / zip_md5
+
+    # Use ENDPOINT_TOKEN if provided; fallback to zip md5
+    endpoint_token = os.environ.get("ENDPOINT_TOKEN", "").strip()
+    snapshot_id = endpoint_token if endpoint_token else zip_md5
+    snapshot_dir = API_DIR / snapshot_id
+    shards_root = snapshot_dir / "shards" / "by-year"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
-    log(f"ZIP MD5: {zip_md5}")
+    shards_root.mkdir(parents=True, exist_ok=True)
+
+    log(f"Snapshot ID: {snapshot_id}")
 
     manifest: Dict[str, List[str]] = {}   # year -> list of shard paths (relative to repo root)
     shard_sizes: Dict[str, List[int]] = {}
@@ -312,11 +304,6 @@ def main() -> None:
         headers = next(reader)
         field_map = build_field_map(headers)
 
-        # Clear shard dir (we fully re-build)
-        if SHARDS_DIR.exists():
-            for p in SHARDS_DIR.glob("*.ndjson"):
-                p.unlink()
-
         summary = {
             "source": "Property Price Register",
             "source_url": PPR_URL,
@@ -325,6 +312,8 @@ def main() -> None:
             "generated_at_utc": dt.datetime.utcnow().isoformat() + "Z",
             "total_records": 0,
             "by_year": {},   # counts per year
+            "endpoint_token_used": bool(endpoint_token),
+            "snapshot_id": snapshot_id,
         }
 
         writers_by_year: Dict[int, RotatingNDJSONWriter] = {}
@@ -345,10 +334,8 @@ def main() -> None:
             except Exception:
                 continue  # skip malformed
 
-            # Price (deterministic cents-dropper)
+            # Price + runtime checkpoint
             price_eur, price_text = parse_price(get("price_text"))
-
-            # RUNTIME CHECKPOINT — abort on mismatch
             if os.environ.get("STRICT_PRICE_VALIDATION", "true").lower() in {"1", "true", "yes"}:
                 validate_price_or_die(
                     price_eur, price_text,
@@ -386,8 +373,8 @@ def main() -> None:
 
             line = json.dumps(rec, ensure_ascii=False) + "\n"
 
-            # shards/by-year with rotation
-            ybase = SHARDS_DIR / f"{year}.ndjson"
+            # Write to snapshot's shards/by-year with rotation
+            ybase = shards_root / f"{year}.ndjson"
             if year not in writers_by_year:
                 writers_by_year[year] = RotatingNDJSONWriter(ybase, ROTATE_MAX_BYTES)
                 counts_year[year] = 0
@@ -406,18 +393,20 @@ def main() -> None:
         summary["by_year"] = {str(y): counts_year[y] for y in sorted(counts_year)}
 
     # Snapshot files (small): summary + manifest
-    snapshot_dir = API_DIR / zip_md5
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    (snapshot_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (snapshot_dir / "manifest.json").write_text(json.dumps({
-        "version": zip_md5,
-        "generated_at_utc": summary["generated_at_utc"],
-        "years": manifest,              # year -> list of relative shard paths
-        "sizes": shard_sizes,           # year -> list of sizes (bytes)
-        "shards_root": str(SHARDS_DIR.relative_to(ROOT)),
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (snapshot_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (snapshot_dir / "manifest.json").write_text(
+        json.dumps({
+            "version": snapshot_id,
+            "generated_at_utc": summary["generated_at_utc"],
+            "years": manifest,              # year -> list of relative shard paths
+            "sizes": shard_sizes,           # year -> list of sizes (bytes)
+            "shards_root": str((snapshot_dir / "shards" / "by-year").relative_to(ROOT)),
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
-    # Update meta.json
+    # Update meta.json (points to SNAPSHOT_ID we just produced)
     meta = {}
     if META_PATH.exists():
         try:
@@ -426,7 +415,7 @@ def main() -> None:
             meta = {}
     previous = meta.get("latest_version")
     meta.update({
-        "latest_version": zip_md5,
+        "latest_version": snapshot_id,
         "generated_at_utc": summary["generated_at_utc"],
         "source_url": PPR_URL,
         "total_records": summary["total_records"],
@@ -434,8 +423,11 @@ def main() -> None:
     })
     META_PATH.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    # Prune old snapshots
-    prune_old_snapshots(API_DIR, KEEP_SNAPSHOTS, zip_md5)
+    # Prune old snapshots (keep 3 + current)
+    try:
+        prune_old_snapshots(API_DIR, KEEP_SNAPSHOTS, snapshot_id)
+    except Exception as e:
+        log(f"Pruning skipped: {e}")
 
     # Cleanup
     try:
@@ -445,7 +437,7 @@ def main() -> None:
 
     log("Done.")
     log(f"Snapshot: {snapshot_dir}")
-    log(f"Year shards: {SHARDS_DIR}")
+    log(f"Shards path: {shards_root}")
 
 if __name__ == "__main__":
     main()

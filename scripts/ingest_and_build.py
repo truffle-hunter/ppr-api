@@ -86,15 +86,13 @@ def parse_date(d: str) -> tuple[str,int]:
 
 def parse_price(p: str | None) -> tuple[int | None, str]:
     """
-    Parse a price string and return (euros_without_cents, original_text).
+    Return (euros_without_cents, original_text), robust across US/EU formats.
 
     Rules:
-      - Strip euro symbols/mojibake (€, â‚¬, Ä, EUR) and spaces.
-      - If both '.' and ',' appear, treat the **rightmost** of them as the decimal
-        separator; drop the fractional part.
-      - If only one of '.' or ',' appears, treat it as decimal *only if* it has
-        1–2 digits after it; otherwise treat it as a thousands separator.
-      - Remove all thousands separators and return an integer.
+      - Strip euro symbols/mojibake and spaces.
+      - If both '.' and ',' appear, the **rightmost** is decimal; drop the fraction.
+      - If only one of '.' or ',' appears, treat it as decimal IFF there are 1–2 digits after it.
+      - Otherwise, treat separators as thousands. Output is an int (no cents).
     """
     import re
     if p is None:
@@ -112,9 +110,9 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
     has_dot = "." in s
     has_comma = "," in s
 
+    # Determine integer part by identifying a decimal separator only when it looks like cents.
     integer_part = s
     if has_dot and has_comma:
-        # Decimal is the rightmost separator of either kind
         idx = max(s.rfind("."), s.rfind(","))
         integer_part = s[:idx]
     elif has_dot or has_comma:
@@ -124,8 +122,9 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
         if 1 <= digits_after <= 2:
             integer_part = s[:idx]
         else:
-            integer_part = s  # it's a thousands separator
+            integer_part = s  # it's just a thousands separator
 
+    # Keep only digits (and an optional leading minus, though negatives are unlikely here)
     integer_digits = re.sub(r"[^0-9-]", "", integer_part)
     if integer_digits in ("", "-"):
         return None, original
@@ -136,6 +135,7 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
         euros = None
 
     return euros, original
+
 
 
 def sanitize_filename(s: str) -> str:

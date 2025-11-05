@@ -108,7 +108,7 @@ def expected_whole_euros_from_text(price_text: Optional[str]) -> Optional[int]:
     Deterministic rule to compute expected whole-euro value directly from the ORIGINAL text:
       - Remove spaces/NBSP and euro/mojibake.
       - If it ENDS with [.,]dd → those are cents → drop last two digits from digits-only string.
-      - Else → all separators are thousands → expected = digits-only integer.
+      - Else → separators are thousands → expected = digits-only integer.
     """
     if not price_text:
         return None
@@ -135,19 +135,21 @@ def validate_price_or_die(price_eur: Optional[int], price_text: Optional[str], c
     """
     Runtime checkpoint: compute expected euros from original text and ensure it matches
     what we parsed. If not, raise with full context so the CI run fails immediately.
+    (Avoid backslashes inside f-strings to satisfy Python parser.)
     """
     expected = expected_whole_euros_from_text(price_text)
-    # Only validate when we can derive an expected value
     if expected is None:
         return
+    clean = _clean_price_text(price_text or "")
+    has_trailing = bool(re.search(r"[.,]\d{2}\s*$", clean))
+    hint = "yes" if has_trailing else "no"
     if price_eur != expected:
         raise RuntimeError(
-            f"[PRICE VALIDATION FAILED] {ctx}\n"
-            f"  original: {price_text!r}\n"
-            f"  expected whole-euros: {expected}\n"
-            f"  got: {price_eur}\n"
-            f"  hint: trailing cents pattern present? "
-            f"{'yes' if re.search(r'[.,]\\d{2}\\s*$', _clean_price_text(price_text or '')) else 'no'}"
+            "[PRICE VALIDATION FAILED] " + ctx + "\n"
+            + f"  original: {price_text!r}\n"
+            + f"  expected whole-euros: {expected}\n"
+            + f"  got: {price_eur}\n"
+            + f"  hint: trailing cents pattern present? {hint}"
         )
 
 # ---------- /PRICE PARSING + CHECKPOINT ----------
@@ -345,6 +347,7 @@ def main() -> None:
 
             # Price (deterministic cents-dropper)
             price_eur, price_text = parse_price(get("price_text"))
+
             # RUNTIME CHECKPOINT — abort on mismatch
             if os.environ.get("STRICT_PRICE_VALIDATION", "true").lower() in {"1", "true", "yes"}:
                 validate_price_or_die(

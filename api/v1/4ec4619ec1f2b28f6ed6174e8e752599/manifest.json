@@ -1,0 +1,105 @@
+{
+  "version": "4ec4619ec1f2b28f6ed6174e8e752599",
+  "generated_at_utc": "2025-11-05T08:28:43.580326Z",
+  "years": {
+    "2010": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2010.ndjson"
+    ],
+    "2011": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2011.ndjson"
+    ],
+    "2012": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2012.ndjson"
+    ],
+    "2013": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2013.ndjson"
+    ],
+    "2014": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2014.ndjson"
+    ],
+    "2015": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2015.ndjson"
+    ],
+    "2016": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2016.ndjson"
+    ],
+    "2017": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2017.ndjson"
+    ],
+    "2018": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2018.ndjson"
+    ],
+    "2019": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2019.ndjson"
+    ],
+    "2020": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2020.ndjson"
+    ],
+    "2021": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2021.ndjson"
+    ],
+    "2022": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2022.ndjson"
+    ],
+    "2023": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2023.ndjson"
+    ],
+    "2024": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2024.ndjson"
+    ],
+    "2025": [
+      "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year/2025.ndjson"
+    ]
+  },
+  "sizes": {
+    "2010": [
+      11058186
+    ],
+    "2011": [
+      9635223
+    ],
+    "2012": [
+      13225993
+    ],
+    "2013": [
+      15780179
+    ],
+    "2014": [
+      22975194
+    ],
+    "2015": [
+      25881467
+    ],
+    "2016": [
+      26342205
+    ],
+    "2017": [
+      29145083
+    ],
+    "2018": [
+      30414191
+    ],
+    "2019": [
+      30736861
+    ],
+    "2020": [
+      25776463
+    ],
+    "2021": [
+      31097490
+    ],
+    "2022": [
+      32790965
+    ],
+    "2023": [
+      33097978
+    ],
+    "2024": [
+      32119169
+    ],
+    "2025": [
+      23823954
+    ]
+  },
+  "shards_root": "api/v1/4ec4619ec1f2b28f6ed6174e8e752599/shards/by-year"
+}

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Ingest the Irish Property Price Register, normalize it, and write outputs to:
-  - shards/by-year/<YYYY>.ndjson (auto-rotates to _partNN if a file nears 100MB)
+  - shards/by-year/<YYYY>.ndjson (auto-rotates to _partNN under ~90MB)
   - api/v1/<ZIP_MD5>/summary.json
   - api/v1/<ZIP_MD5>/manifest.json
 
-No by-county outputs and no all.ndjson (to stay under GitHub's 100MB per-file limit).
-Also updates ./meta.json and prunes older api/v1 snapshots (keeps 3).
+No by-county outputs and no all.ndjson (stay under GitHub's 100MB file limit).
+Updates ./meta.json and prunes older api/v1 snapshots (keeps 3).
 
-Standard-library only. Supports optional insecure TLS fallback when
+Standard-library only. Optional insecure TLS fallback when
 environment variable ALLOW_INSECURE_FETCH=true or --insecure is passed.
 """
 
@@ -95,73 +95,38 @@ def parse_date(d: str) -> Tuple[str, int]:
 
 def parse_price(p: Optional[str]) -> Tuple[Optional[int], str]:
     """
-    Return (euros_without_cents, original_text), robust across US/EU formats.
+    Return (euros_without_cents, original_text) using a bulletproof rule:
 
-    Rules:
-      - Strip euro symbols/mojibake (€, â‚¬, Ä, EUR) and spaces.
-      - Treat the **rightmost** of '.' or ',' as decimal only if there are exactly 1–2 digits after it;
-        otherwise treat separators as thousands.
-      - Drop the fractional part and return an int.
+      1) Remove spaces/NBSP and euro/mojibake (€, â‚¬, Ä, EUR).
+      2) If the original (cleaned) string ENDS with a decimal separator followed by exactly two digits
+         (regex: r"[.,]\\d{2}\\s*$"), treat those as cents and DROP the last two digits from the
+         digits-only string.
+      3) Otherwise, keep all digits (separators are thousands markers).
+
+    This avoids any ambiguity about '.' vs ',' and fixes the 34300000 bug.
     """
     if p is None:
         return None, ""
     original = (p or "").strip()
 
-    s = original
+    s = original.replace("\xa0", "").replace(" ", "")
     for art in ("€", "â‚¬", "Ä", "EUR", "eur"):
         s = s.replace(art, "")
-    s = s.replace("\xa0", "").replace(" ", "")
-    # Keep only digits and separators for detection
-    s = re.sub(r"[^0-9\.,-]", "", s)
-    if not s:
+
+    # Detect cents by a strict trailing pattern like ",00" or ".02"
+    has_trailing_cents = bool(re.search(r"[.,]\d{2}\s*$", s))
+
+    # Build a pure digit string; this contains both thousands and (maybe) cents
+    digits = re.sub(r"\D", "", s)
+    if not digits:
         return None, original
 
-    has_dot = "." in s
-    has_comma = "," in s
+    if has_trailing_cents and len(digits) >= 2:
+        euros_str = digits[:-2] or "0"
+    else:
+        euros_str = digits
 
-    integer_part = s
-    if has_dot and has_comma:
-        idx = max(s.rfind("."), s.rfind(","))
-        integer_part = s[:idx]
-    elif has_dot or has_comma:
-        sep = "." if has_dot else ","
-        idx = s.rfind(sep)
-        digits_after = len(re.sub(r"[^0-9]", "", s[idx+1:]))
-        if 1 <= digits_after <= 2:
-            integer_part = s[:idx]
-        else:
-            integer_part = s  # separator is thousands, not decimal
-
-    # Remove any remaining non-digits (like thousands separators) and parse
-    integer_digits = re.sub(r"[^0-9-]", "", integer_part)
-    if integer_digits in ("", "-"):
-        return None, original
-
-    try:
-        euros = int(integer_digits)
-    except ValueError:
-        euros = None
-
-    return euros, original
-
-def fix_hundred_inflation(euros: Optional[int], price_text: Optional[str]) -> Optional[int]:
-    """
-    Final safety clamp: if original text ends with decimal cents (…[.,]dd),
-    and our integer appears to have kept those two digits (×100 bug),
-    divide by 100.
-    """
-    if euros is None or not price_text:
-        return euros
-    s = price_text.strip().replace("\xa0", "").replace(" ", "")
-    if not re.search(r"[.,]\d{2}\s*$", s):
-        return euros
-
-    digits_in_text = len(re.sub(r"\D", "", s))      # includes cents
-    digits_in_euros = len(str(abs(euros)))
-
-    if digits_in_euros == digits_in_text:
-        return euros // 100
-    return euros
+    return int(euros_str), original
 
 def sanitize_filename(s: str) -> str:
     s = (s or "").strip().lower().replace(" ", "_")
@@ -176,8 +141,8 @@ class RotatingNDJSONWriter:
         self.base_path = base_path
         self.max_bytes = max_bytes
         self.part = 1
-        self.cur_path = None  # type: Optional[Path]
-        self.cur_f = None     # type: Optional[io.TextIOWrapper]
+        self.cur_path: Optional[Path] = None
+        self.cur_f: Optional[io.TextIOWrapper] = None
         self.cur_bytes = 0
         self.paths: List[Path] = []
         self._open_new()
@@ -209,10 +174,6 @@ class RotatingNDJSONWriter:
         if self.cur_f:
             self.cur_f.close()
             self.cur_f = None
-
-def open_ndjson_writer(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path.open("w", encoding="utf-8", newline="\n")
 
 def pick_csv_member(zf: zipfile.ZipFile) -> zipfile.ZipInfo:
     candidates = [m for m in zf.infolist() if m.filename.lower().endswith(".csv")]
@@ -272,7 +233,6 @@ def download_zip(tmp_path: Path, insecure_env: bool = False) -> None:
         _fetch(context=insecure_ctx)
 
 def prune_old_snapshots(api_dir: Path, keep: int, keep_id: str) -> None:
-    # delete older version folders, preserving 'keep' most-recent plus the current
     items = []
     for p in api_dir.iterdir():
         if p.is_dir() and re.fullmatch(r"[0-9a-fA-F]{32}", p.name):
@@ -305,7 +265,7 @@ def main() -> None:
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     log(f"ZIP MD5: {zip_md5}")
 
-    manifest: Dict[str, List[str]] = {}  # year -> list of shard paths (relative to repo root)
+    manifest: Dict[str, List[str]] = {}   # year -> list of shard paths (relative to repo root)
     shard_sizes: Dict[str, List[int]] = {}
 
     with zipfile.ZipFile(tmp_zip, "r") as zf:
@@ -354,107 +314,3 @@ def main() -> None:
                 return (row.get(col) if col else None)
 
             # Date
-            try:
-                iso_date, year = parse_date(get("date") or "")
-            except Exception:
-                # skip malformed dates
-                continue
-
-            # Price (parse + safety clamp)
-            price_eur, price_text = parse_price(get("price_text"))
-            price_eur = fix_hundred_inflation(price_eur, price_text)
-
-            # Other fields
-            address = (get("address") or "").strip()
-            county = (get("county") or "").strip()
-            eircode_raw = (get("eircode") or "").strip()
-            eircode = eircode_raw if eircode_raw else "NONE"
-            nfm_int = to_bool_int(get("not_full_market_price"))
-            vat_int = to_bool_int(get("vat_exclusive"))
-            prop_desc = (get("property_description") or "").strip() or None
-            size_desc = (get("property_size_description") or "").strip() or None
-
-            county_norm = county.title().replace("Co.", "Co.").strip()
-
-            rec = {
-                "id": hashlib.sha1("|".join([iso_date, address, county_norm, price_text or ""]).encode("utf-8")).hexdigest(),
-                "date": iso_date,
-                "address": address,
-                "county": county_norm,
-                "eircode": eircode,
-                "price_eur": price_eur,
-                "price_text": price_text,
-                "nfm": nfm_int if nfm_int is not None else 0,
-                "vat_exclusive": vat_int if vat_int is not None else 0,
-                "description": prop_desc,
-                "property_size_description": size_desc,
-                "source": "Property Price Register",
-                "source_url": PPR_URL,
-                "row_number": idx
-            }
-
-            line = json.dumps(rec, ensure_ascii=False) + "\n"
-
-            # shards/by-year with rotation
-            ybase = SHARDS_DIR / f"{year}.ndjson"
-            if year not in writers_by_year:
-                writers_by_year[year] = RotatingNDJSONWriter(ybase, ROTATE_MAX_BYTES)
-                counts_year[year] = 0
-            writers_by_year[year].write_line(line)
-            counts_year[year] += 1
-            summary["total_records"] += 1
-
-        # Close writers and collect manifest entries + sizes
-        for year, w in writers_by_year.items():
-            w.close()
-            paths = [str(p.relative_to(ROOT)) for p in w.paths]
-            manifest[str(year)] = paths
-            sizes = [Path(ROOT, p).stat().st_size for p in paths]
-            shard_sizes[str(year)] = sizes
-
-        summary["by_year"] = {str(y): counts_year[y] for y in sorted(counts_year)}
-
-    # Snapshot files (small): summary + manifest
-    snapshot_dir = API_DIR / zip_md5
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    (snapshot_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (snapshot_dir / "manifest.json").write_text(json.dumps({
-        "version": zip_md5,
-        "generated_at_utc": summary["generated_at_utc"],
-        "years": manifest,              # year -> list of relative shard paths
-        "sizes": shard_sizes,           # year -> list of sizes (bytes)
-        "shards_root": str(SHARDS_DIR.relative_to(ROOT)),
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-    # Update meta.json
-    meta = {}
-    if META_PATH.exists():
-        try:
-            meta = json.loads(META_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            meta = {}
-    previous = meta.get("latest_version")
-    meta.update({
-        "latest_version": zip_md5,
-        "generated_at_utc": summary["generated_at_utc"],
-        "source_url": PPR_URL,
-        "total_records": summary["total_records"],
-        "previous_version": previous,
-    })
-    META_PATH.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-    # Prune old snapshots
-    prune_old_snapshots(API_DIR, KEEP_SNAPSHOTS, zip_md5)
-
-    # Cleanup
-    try:
-        tmp_zip.unlink()
-    except FileNotFoundError:
-        pass
-
-    log("Done.")
-    log(f"Snapshot: {snapshot_dir}")
-    log(f"Year shards: {SHARDS_DIR}")
-
-if __name__ == "__main__":
-    main()

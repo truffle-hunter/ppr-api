@@ -3,8 +3,7 @@ name: Update PPR JSON
 on:
   workflow_dispatch:
   schedule:
-    # Daily at 06:17 UTC
-    - cron: "17 6 * * *"
+    - cron: "17 6 * * *"  # daily at 06:17 UTC
 
 permissions:
   contents: write
@@ -17,10 +16,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # Try verified TLS first; if the host's chain is broken, allow insecure fallback.
+      # Verified TLS first; if the host's chain is broken, allow insecure fallback.
       ALLOW_INSECURE_FETCH: "true"
-      # Script aborts immediately if a parsed price doesn't match the expected integer from the original text.
+      # Abort immediately if any parsed price doesn't match the expected integer from the original text.
       STRICT_PRICE_VALIDATION: "true"
+      # Use your obfuscation token as the snapshot folder name under api/v1/
+      ENDPOINT_TOKEN: ${{ secrets.ENDPOINT_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,12 +33,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Show script checksum (debug)
-        run: |
-          sha256sum scripts/ingest_and_build.py || shasum -a 256 scripts/ingest_and_build.py
-          python --version
-
-      - name: Quick unit sanity for parser
+      - name: Quick parser sanity
         run: |
           python - <<'PY'
           import pathlib, importlib.util, sys
@@ -45,7 +41,7 @@ jobs:
           spec = importlib.util.spec_from_file_location("ing", p)
           m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
           tests = {
-            "Ä343,000.00": 343000,
+            "€343,000.00": 343000,
             "Ä154,185.02": 154185,
             "172,500": 172500,
             "€ 1.234.567,89": 1234567,

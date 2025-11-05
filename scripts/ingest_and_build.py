@@ -7,10 +7,12 @@ Ingest the Irish Property Price Register, normalize it, and write outputs to:
   - api/v1/<ZIP_MD5>/summary.json
 Also updates ./meta.json and prunes older api/v1 snapshots (keeps 3).
 
-Standard-library only.
+Standard-library only. Supports optional insecure TLS fallback when
+environment variable ALLOW_INSECURE_FETCH=true.
 """
 
 from __future__ import annotations
+import argparse
 import csv
 import datetime as dt
 import hashlib
@@ -22,7 +24,9 @@ import re
 import shutil
 import sys
 import urllib.request
+import urllib.error
 import zipfile
+import ssl
 
 PPR_URL = "https://www.propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/Downloads/PPR-ALL.zip/$FILE/PPR-ALL.zip"
 
@@ -68,14 +72,15 @@ def build_field_map(headers: list[str]) -> dict[str, str]:
         raise ValueError(f"Missing required columns: {missing}\nHeaders: {headers}")
     return mapping
 
-def to_bool(s: str | None) -> bool | None:
+def to_bool_int(s: str | None) -> int | None:
+    """Return 1/0 from Yes/No-like values; None if unknown."""
     if s is None:
         return None
     v = (s or "").strip().lower()
-    if v in BOOL_TRUE: return True
-    if v in BOOL_FALSE: return False
-    if v == "yes": return True
-    if v == "no": return False
+    if v in BOOL_TRUE or v == "yes":
+        return 1
+    if v in BOOL_FALSE or v == "no":
+        return 0
     return None
 
 def parse_date(d: str) -> tuple[str, int]:
@@ -101,7 +106,7 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
     for art in ("€", "â‚¬", "Ä", "EUR", "eur"):
         s = s.replace(art, "")
     s = s.replace("\xa0", "").replace(" ", "")
-    # Keep only digits and separators
+    # Keep only digits and separators for detection
     s = re.sub(r"[^0-9\.,-]", "", s)
     if not s:
         return None, original
@@ -111,18 +116,16 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
 
     integer_part = s
     if has_dot and has_comma:
-        # Consider the rightmost separator as decimal and drop fraction
         idx = max(s.rfind("."), s.rfind(","))
         integer_part = s[:idx]
     elif has_dot or has_comma:
         sep = "." if has_dot else ","
         idx = s.rfind(sep)
-        # Count numeric digits after the separator
         digits_after = len(re.sub(r"[^0-9]", "", s[idx+1:]))
-        if 1 <= digits_after <= 2:  # likely cents
+        if 1 <= digits_after <= 2:
             integer_part = s[:idx]
         else:
-            integer_part = s  # separator is thousands, not decimal
+            integer_part = s  # it's just a thousands separator
 
     # Remove any remaining non-digits (like thousands separators) and parse
     integer_digits = re.sub(r"[^0-9-]", "", integer_part)
@@ -138,21 +141,19 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
 
 def fix_hundred_inflation(euros: int | None, price_text: str | None) -> int | None:
     """
-    If the original text ends with a decimal separator + two digits (cents),
-    and our integer still *appears* to include those two digits (the classic ×100 bug),
-    divide by 100. This is a final safety clamp.
+    Final safety clamp: if original text ends with decimal cents (…[.,]dd),
+    and our integer appears to have kept those two digits (×100 bug),
+    divide by 100.
     """
     if euros is None or not price_text:
         return euros
     s = price_text.strip().replace("\xa0", "").replace(" ", "")
-    has_cents = bool(re.search(r"[.,]\d{2}\s*$", s))
-    if not has_cents:
+    if not re.search(r"[.,]\d{2}\s*$", s):
         return euros
 
     digits_in_text = len(re.sub(r"\D", "", s))      # includes cents
     digits_in_euros = len(str(abs(euros)))
 
-    # If digit counts match, we likely kept the cents; fix it.
     if digits_in_euros == digits_in_text:
         return euros // 100
     return euros
@@ -188,13 +189,39 @@ def md5_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def download_zip(tmp_path: Path) -> None:
+def download_zip(tmp_path: Path, insecure_env: bool = False) -> None:
+    """
+    Try a normal verified TLS fetch first. If it fails due to SSL certificate
+    issues and insecure_env=True, retry with an unverified SSL context.
+    """
     req = urllib.request.Request(
         PPR_URL,
-        headers={"User-Agent": "ppr-updater/1.0 (+github actions)"}
+        headers={
+            "User-Agent": "ppr-updater/1.0 (+github actions)",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Connection": "close",
+        },
+        method="GET",
     )
-    with urllib.request.urlopen(req) as r, tmp_path.open("wb") as f:
-        shutil.copyfileobj(r, f)
+
+    def _fetch(context: ssl.SSLContext | None) -> None:
+        with urllib.request.urlopen(req, timeout=60, context=context) as r, tmp_path.open("wb") as f:
+            shutil.copyfileobj(r, f)
+
+    # Attempt with verified context
+    try:
+        _fetch(context=ssl.create_default_context())
+        return
+    except urllib.error.URLError as e:
+        log(f"Verified TLS fetch failed: {e}")
+        if not insecure_env:
+            raise
+        log("Retrying with INSECURE TLS (certificate verification disabled)…")
+        insecure_ctx = ssl.create_default_context()
+        insecure_ctx.check_hostname = False
+        insecure_ctx.verify_mode = ssl.CERT_NONE
+        _fetch(context=insecure_ctx)
 
 def prune_old_snapshots(api_dir: Path, keep: int, keep_id: str) -> None:
     # delete older version folders, preserving 'keep' most-recent plus the current
@@ -208,14 +235,23 @@ def prune_old_snapshots(api_dir: Path, keep: int, keep_id: str) -> None:
         if name not in keep_names:
             shutil.rmtree(path, ignore_errors=True)
 
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--insecure", action="store_true",
+                    help="Allow insecure TLS fetch if verified fetch fails (overrides ALLOW_INSECURE_FETCH).")
+    return ap.parse_args()
+
 def main() -> None:
+    args = parse_args()
+    allow_insecure = args.insecure or os.environ.get("ALLOW_INSECURE_FETCH", "").lower() in {"1", "true", "yes"}
+
     ROOT.mkdir(parents=True, exist_ok=True)
     API_DIR.mkdir(parents=True, exist_ok=True)
     SHARDS_DIR.mkdir(parents=True, exist_ok=True)
 
     tmp_zip = ROOT / ".tmp-ppr.zip"
     log("Downloading ZIP…")
-    download_zip(tmp_zip)
+    download_zip(tmp_zip, insecure_env=allow_insecure)
     zip_md5 = md5_file(tmp_zip)
     snapshot_dir = API_DIR / zip_md5
     snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -290,9 +326,9 @@ def main() -> None:
                 address = (get("address") or "").strip()
                 county = (get("county") or "").strip()
                 eircode_raw = (get("eircode") or "").strip()
-                eircode = eircode_raw if eircode_raw else "NONE"  # explicit string if missing
-                nfp = to_bool(get("not_full_market_price"))
-                vat_exc = to_bool(get("vat_exclusive"))
+                eircode = eircode_raw if eircode_raw else "NONE"
+                nfm_int = to_bool_int(get("not_full_market_price"))
+                vat_int = to_bool_int(get("vat_exclusive"))
                 prop_desc = (get("property_description") or "").strip() or None
                 size_desc = (get("property_size_description") or "").strip() or None
 
@@ -306,9 +342,9 @@ def main() -> None:
                     "eircode": eircode,
                     "price_eur": price_eur,
                     "price_text": price_text,
-                    "not_full_market_price": nfp,
-                    "vat_exclusive": vat_exc,
-                    "property_description": prop_desc,
+                    "nfm": nfm_int if nfm_int is not None else 0,
+                    "vat_exclusive": vat_int if vat_int is not None else 0,
+                    "description": prop_desc,
                     "property_size_description": size_desc,
                     "source": "Property Price Register",
                     "source_url": PPR_URL,

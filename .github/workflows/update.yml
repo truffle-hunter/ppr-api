@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Enable insecure TLS fallback only if the source site has a broken chain.
-      # The script first tries a verified TLS fetch; if it fails, this allows a retry without verification.
+      # Script first tries verified TLS; on failure, this allows a retry without verification.
       ALLOW_INSECURE_FETCH: "true"
     steps:
       - name: Checkout

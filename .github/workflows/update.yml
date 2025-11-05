@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Enable insecure TLS fallback only if the source site has a broken chain.
-      # Script first tries verified TLS; on failure, this allows a retry without verification.
+      # The script first tries verified TLS; on failure, this allows a retry without verification.
       ALLOW_INSECURE_FETCH: "true"
     steps:
       - name: Checkout
@@ -55,7 +55,6 @@ jobs:
           failures = 0
           for s, want in tests.items():
             euros, _ = m.parse_price(s)
-            euros = m.fix_hundred_inflation(euros, s)
             print(f"{s!r} -> {euros}")
             if euros != want:
               print(f"FAIL: expected {want}, got {euros} for {s!r}", file=sys.stderr)

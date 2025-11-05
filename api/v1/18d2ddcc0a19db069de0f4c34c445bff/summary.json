@@ -1,0 +1,26 @@
+{
+  "source": "Property Price Register",
+  "source_url": "https://www.propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/Downloads/PPR-ALL.zip/$FILE/PPR-ALL.zip",
+  "zip_md5": "18d2ddcc0a19db069de0f4c34c445bff",
+  "zip_member": "PPR-ALL.csv",
+  "generated_at_utc": "2025-11-05T07:52:44.406997Z",
+  "total_records": 751521,
+  "by_year": {
+    "2010": 21001,
+    "2011": 18440,
+    "2012": 25372,
+    "2013": 30218,
+    "2014": 43670,
+    "2015": 49163,
+    "2016": 49934,
+    "2017": 55017,
+    "2018": 57449,
+    "2019": 59057,
+    "2020": 49548,
+    "2021": 59583,
+    "2022": 62725,
+    "2023": 63321,
+    "2024": 61429,
+    "2025": 45594
+  }
+}

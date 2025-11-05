@@ -1,0 +1,105 @@
+{
+  "version": "18d2ddcc0a19db069de0f4c34c445bff",
+  "generated_at_utc": "2025-11-05T07:52:44.406997Z",
+  "years": {
+    "2010": [
+      "shards/by-year/2010.ndjson"
+    ],
+    "2011": [
+      "shards/by-year/2011.ndjson"
+    ],
+    "2012": [
+      "shards/by-year/2012.ndjson"
+    ],
+    "2013": [
+      "shards/by-year/2013.ndjson"
+    ],
+    "2014": [
+      "shards/by-year/2014.ndjson"
+    ],
+    "2015": [
+      "shards/by-year/2015.ndjson"
+    ],
+    "2016": [
+      "shards/by-year/2016.ndjson"
+    ],
+    "2017": [
+      "shards/by-year/2017.ndjson"
+    ],
+    "2018": [
+      "shards/by-year/2018.ndjson"
+    ],
+    "2019": [
+      "shards/by-year/2019.ndjson"
+    ],
+    "2020": [
+      "shards/by-year/2020.ndjson"
+    ],
+    "2021": [
+      "shards/by-year/2021.ndjson"
+    ],
+    "2022": [
+      "shards/by-year/2022.ndjson"
+    ],
+    "2023": [
+      "shards/by-year/2023.ndjson"
+    ],
+    "2024": [
+      "shards/by-year/2024.ndjson"
+    ],
+    "2025": [
+      "shards/by-year/2025.ndjson"
+    ]
+  },
+  "sizes": {
+    "2010": [
+      11058186
+    ],
+    "2011": [
+      9635223
+    ],
+    "2012": [
+      13225993
+    ],
+    "2013": [
+      15780179
+    ],
+    "2014": [
+      22975194
+    ],
+    "2015": [
+      25881467
+    ],
+    "2016": [
+      26342205
+    ],
+    "2017": [
+      29145083
+    ],
+    "2018": [
+      30414191
+    ],
+    "2019": [
+      30736861
+    ],
+    "2020": [
+      25776463
+    ],
+    "2021": [
+      31097490
+    ],
+    "2022": [
+      32790965
+    ],
+    "2023": [
+      33097978
+    ],
+    "2024": [
+      32119169
+    ],
+    "2025": [
+      23823954
+    ]
+  },
+  "shards_root": "shards/by-year"
+}

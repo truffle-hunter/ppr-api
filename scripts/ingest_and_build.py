@@ -93,40 +93,64 @@ def parse_date(d: str) -> Tuple[str, int]:
     obj = dt.datetime.strptime(d, "%d/%m/%Y").date()
     return obj.isoformat(), obj.year
 
+# ---------- PRICE PARSING + RUNTIME CHECKPOINT ----------
+
+EURO_ARTIFACTS = ("€", "â‚¬", "Ä", "EUR", "eur")
+
+def _clean_price_text(s: str) -> str:
+    s = s.replace("\xa0", "").replace(" ", "")
+    for a in EURO_ARTIFACTS:
+        s = s.replace(a, "")
+    return s
+
+def expected_whole_euros_from_text(price_text: Optional[str]) -> Optional[int]:
+    """
+    Deterministic rule to compute expected whole-euro value directly from the ORIGINAL text:
+      - Remove spaces/NBSP and euro/mojibake.
+      - If it ENDS with [.,]dd → those are cents → drop last two digits from digits-only string.
+      - Else → all separators are thousands → expected = digits-only integer.
+    """
+    if not price_text:
+        return None
+    s = _clean_price_text(price_text.strip())
+    digits = re.sub(r"\D", "", s)
+    if not digits:
+        return None
+    has_trailing_cents = bool(re.search(r"[.,]\d{2}\s*$", s))
+    if has_trailing_cents and len(digits) >= 2:
+        return int(digits[:-2] or "0")
+    return int(digits)
+
 def parse_price(p: Optional[str]) -> Tuple[Optional[int], str]:
     """
-    Return (euros_without_cents, original_text) using a bulletproof rule:
-
-      1) Remove spaces/NBSP and euro/mojibake (€, â‚¬, Ä, EUR).
-      2) If the original (cleaned) string ENDS with a decimal separator followed by exactly two digits
-         (regex: r"[.,]\\d{2}\\s*$"), treat those as cents and DROP the last two digits from the
-         digits-only string.
-      3) Otherwise, keep all digits (separators are thousands markers).
-
-    This avoids any ambiguity about '.' vs ',' and fixes the 34300000 bug.
+    Parse whole euros using the same deterministic rule as `expected_whole_euros_from_text`,
+    and return (euros_without_cents, original_text).
     """
     if p is None:
         return None, ""
     original = (p or "").strip()
+    return expected_whole_euros_from_text(original), original
 
-    s = original.replace("\xa0", "").replace(" ", "")
-    for art in ("€", "â‚¬", "Ä", "EUR", "eur"):
-        s = s.replace(art, "")
+def validate_price_or_die(price_eur: Optional[int], price_text: Optional[str], ctx: str) -> None:
+    """
+    Runtime checkpoint: compute expected euros from original text and ensure it matches
+    what we parsed. If not, raise with full context so the CI run fails immediately.
+    """
+    expected = expected_whole_euros_from_text(price_text)
+    # Only validate when we can derive an expected value
+    if expected is None:
+        return
+    if price_eur != expected:
+        raise RuntimeError(
+            f"[PRICE VALIDATION FAILED] {ctx}\n"
+            f"  original: {price_text!r}\n"
+            f"  expected whole-euros: {expected}\n"
+            f"  got: {price_eur}\n"
+            f"  hint: trailing cents pattern present? "
+            f"{'yes' if re.search(r'[.,]\\d{2}\\s*$', _clean_price_text(price_text or '')) else 'no'}"
+        )
 
-    # Detect cents by a strict trailing pattern like ",00" or ".02"
-    has_trailing_cents = bool(re.search(r"[.,]\d{2}\s*$", s))
-
-    # Build a pure digit string; this contains both thousands and (maybe) cents
-    digits = re.sub(r"\D", "", s)
-    if not digits:
-        return None, original
-
-    if has_trailing_cents and len(digits) >= 2:
-        euros_str = digits[:-2] or "0"
-    else:
-        euros_str = digits
-
-    return int(euros_str), original
+# ---------- /PRICE PARSING + CHECKPOINT ----------
 
 def sanitize_filename(s: str) -> str:
     s = (s or "").strip().lower().replace(" ", "_")
@@ -314,3 +338,111 @@ def main() -> None:
                 return (row.get(col) if col else None)
 
             # Date
+            try:
+                iso_date, year = parse_date(get("date") or "")
+            except Exception:
+                continue  # skip malformed
+
+            # Price (deterministic cents-dropper)
+            price_eur, price_text = parse_price(get("price_text"))
+            # RUNTIME CHECKPOINT — abort on mismatch
+            if os.environ.get("STRICT_PRICE_VALIDATION", "true").lower() in {"1", "true", "yes"}:
+                validate_price_or_die(
+                    price_eur, price_text,
+                    ctx=f"row={idx}, date={iso_date}, address={get('address')}, county={get('county')}"
+                )
+
+            # Other fields
+            address = (get("address") or "").strip()
+            county = (get("county") or "").strip()
+            eircode_raw = (get("eircode") or "").strip()
+            eircode = eircode_raw if eircode_raw else "NONE"
+            nfm_int = to_bool_int(get("not_full_market_price"))
+            vat_int = to_bool_int(get("vat_exclusive"))
+            prop_desc = (get("property_description") or "").strip() or None
+            size_desc = (get("property_size_description") or "").strip() or None
+
+            county_norm = county.title().replace("Co.", "Co.").strip()
+
+            rec = {
+                "id": hashlib.sha1("|".join([iso_date, address, county_norm, price_text or ""]).encode("utf-8")).hexdigest(),
+                "date": iso_date,
+                "address": address,
+                "county": county_norm,
+                "eircode": eircode,
+                "price_eur": price_eur,
+                "price_text": price_text,
+                "nfm": nfm_int if nfm_int is not None else 0,
+                "vat_exclusive": vat_int if vat_int is not None else 0,
+                "description": prop_desc,
+                "property_size_description": size_desc,
+                "source": "Property Price Register",
+                "source_url": PPR_URL,
+                "row_number": idx
+            }
+
+            line = json.dumps(rec, ensure_ascii=False) + "\n"
+
+            # shards/by-year with rotation
+            ybase = SHARDS_DIR / f"{year}.ndjson"
+            if year not in writers_by_year:
+                writers_by_year[year] = RotatingNDJSONWriter(ybase, ROTATE_MAX_BYTES)
+                counts_year[year] = 0
+            writers_by_year[year].write_line(line)
+            counts_year[year] += 1
+            summary["total_records"] += 1
+
+        # Close writers and collect manifest entries + sizes
+        for year, w in writers_by_year.items():
+            w.close()
+            paths = [str(p.relative_to(ROOT)) for p in w.paths]
+            manifest[str(year)] = paths
+            sizes = [Path(ROOT, p).stat().st_size for p in paths]
+            shard_sizes[str(year)] = sizes
+
+        summary["by_year"] = {str(y): counts_year[y] for y in sorted(counts_year)}
+
+    # Snapshot files (small): summary + manifest
+    snapshot_dir = API_DIR / zip_md5
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    (snapshot_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (snapshot_dir / "manifest.json").write_text(json.dumps({
+        "version": zip_md5,
+        "generated_at_utc": summary["generated_at_utc"],
+        "years": manifest,              # year -> list of relative shard paths
+        "sizes": shard_sizes,           # year -> list of sizes (bytes)
+        "shards_root": str(SHARDS_DIR.relative_to(ROOT)),
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    # Update meta.json
+    meta = {}
+    if META_PATH.exists():
+        try:
+            meta = json.loads(META_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+    previous = meta.get("latest_version")
+    meta.update({
+        "latest_version": zip_md5,
+        "generated_at_utc": summary["generated_at_utc"],
+        "source_url": PPR_URL,
+        "total_records": summary["total_records"],
+        "previous_version": previous,
+    })
+    META_PATH.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    # Prune old snapshots
+    prune_old_snapshots(API_DIR, KEEP_SNAPSHOTS, zip_md5)
+
+    # Cleanup
+    try:
+        tmp_zip.unlink()
+    except FileNotFoundError:
+        pass
+
+    log("Done.")
+    log(f"Snapshot: {snapshot_dir}")
+    log(f"Year shards: {SHARDS_DIR}")
+
+if __name__ == "__main__":
+    main()

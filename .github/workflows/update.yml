@@ -3,7 +3,8 @@ name: Update PPR JSON
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 6 * * *"  # daily at 06:17 UTC
+    # Weekly at 06:17 UTC every Wednesday (GitHub Actions uses UTC)
+    - cron: "17 6 * * 3"
 
 permissions:
   contents: write
@@ -16,11 +17,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # Verified TLS first; if the host's chain is broken, allow insecure fallback.
-      ALLOW_INSECURE_FETCH: "true"
-      # Abort immediately if any parsed price doesn't match the expected integer from the original text.
-      STRICT_PRICE_VALIDATION: "true"
-      # Use your obfuscation token as the snapshot folder name under api/v1/
+      ALLOW_INSECURE_FETCH: "true"       # keep TLS fallback
+      STRICT_PRICE_VALIDATION: "true"    # fail fast on price mismatch
       ENDPOINT_TOKEN: ${{ secrets.ENDPOINT_TOKEN }}
     steps:
       - name: Checkout
@@ -70,7 +68,7 @@ jobs:
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git add -A
-            git commit -m "chore: refresh PPR data ($(date -u +'%Y-%m-%dT%H:%M:%SZ'))"
+            git commit -m "chore: weekly PPR refresh ($(date -u +'%Y-%m-%dT%H:%M:%SZ'))"
             git push
           else
             echo "No changes."

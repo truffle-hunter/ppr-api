@@ -200,14 +200,17 @@ def fetch_zip() -> io.BytesIO:
 
 
 def read_all_csvs(zbytes: io.BytesIO) -> pd.DataFrame:
-    """Read all CSVs from the ZIP; return a unified DataFrame with canonical columns."""
+    """
+    Read all CSVs from the ZIP; coalesce multiple raw headers that map to the
+    same canonical field into **one** column to avoid duplicate names.
+    """
     frames = []
     with zipfile.ZipFile(zbytes) as zf:
         for name in zf.namelist():
             if not name.lower().endswith(".csv"):
                 continue
             with zf.open(name) as f:
-                # Keep as strings; avoid NA coercions that can eat values
+                # keep everything as strings to avoid NA coercion issues
                 df = pd.read_csv(
                     f,
                     encoding="latin-1",
@@ -216,34 +219,38 @@ def read_all_csvs(zbytes: io.BytesIO) -> pd.DataFrame:
                     na_filter=False,
                 )
 
-            # Build a rename map using our canonicalizer
-            rename = {}
-            for c in list(df.columns):
-                canon = canonicalize_column(c)
-                if canon and canon not in df.columns:
-                    rename[c] = canon
-            df = df.rename(columns=rename)
+            # Build groups of raw columns per canonical target
+            groups: dict[str, list[str]] = {}
+            for col in df.columns:
+                canon = canonicalize_column(col)
+                if not canon:
+                    continue
+                groups.setdefault(canon, []).append(col)
 
-            # Ensure the expected schema exists
-            keep = [
-                "date",
-                "address",
-                "eircode",
-                "county",
-                "price",
-                "nfm",
-                "vat_exclusive",
-                "description",
-            ]
+            # Coalesce into the schema we want
+            keep = ["date", "address", "eircode", "county", "price",
+                    "nfm", "vat_exclusive", "description"]
+            out = pd.DataFrame(index=df.index)
             for k in keep:
-                if k not in df.columns:
-                    df[k] = None
-            df = df[keep]
-            frames.append(df)
+                if k in groups:
+                    vals = None
+                    for src in groups[k]:
+                        s = df[src].astype(str).str.strip()
+                        if vals is None:
+                            vals = s
+                        else:
+                            # prefer the first non-empty; fill blanks from later columns
+                            vals = vals.where((vals != "") & (vals.str.lower() != "nan"), s)
+                    out[k] = vals
+                else:
+                    out[k] = None
+
+            frames.append(out)
 
     if not frames:
         raise RuntimeError("No CSV files found in ZIP.")
     return pd.concat(frames, ignore_index=True)
+
 
 
 def normalize(df: pd.DataFrame) -> pd.DataFrame:

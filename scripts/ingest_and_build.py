@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 Ingest the Irish Property Price Register, normalize it, and write outputs to:
-  - shards/by-year/<YYYY>.ndjson
-  - api/v1/<ZIP_MD5>/all.ndjson
-  - api/v1/<ZIP_MD5>/by-county/<county>.ndjson
+  - shards/by-year/<YYYY>.ndjson (auto-rotates to _partNN if a file nears 100MB)
   - api/v1/<ZIP_MD5>/summary.json
+  - api/v1/<ZIP_MD5>/manifest.json
+
+No by-county outputs and no all.ndjson (to stay under GitHub's 100MB per-file limit).
 Also updates ./meta.json and prunes older api/v1 snapshots (keeps 3).
 
 Standard-library only. Supports optional insecure TLS fallback when
-environment variable ALLOW_INSECURE_FETCH=true.
+environment variable ALLOW_INSECURE_FETCH=true or --insecure is passed.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import urllib.request
 import urllib.error
 import zipfile
 import ssl
+from typing import Dict, List, Optional, Tuple
 
 PPR_URL = "https://www.propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/Downloads/PPR-ALL.zip/$FILE/PPR-ALL.zip"
 
@@ -35,6 +37,9 @@ API_DIR = ROOT / "api" / "v1"
 SHARDS_DIR = ROOT / "shards" / "by-year"
 META_PATH = ROOT / "meta.json"
 KEEP_SNAPSHOTS = 3
+
+# Aim below 100MB GitHub limit; rotate around ~90MB to be safe.
+ROTATE_MAX_BYTES = 90 * 1024 * 1024
 
 # CSV headers vary slightly across vintages; map them to canonical names.
 HEADER_MAP = {
@@ -58,9 +63,9 @@ def log(msg: str) -> None:
 def normalize_header(h: str) -> str:
     return re.sub(r"\s+", " ", (h or "")).strip().lower()
 
-def build_field_map(headers: list[str]) -> dict[str, str]:
+def build_field_map(headers: List[str]) -> Dict[str, str]:
     norm = [normalize_header(h) for h in headers]
-    mapping: dict[str, str] = {}
+    mapping: Dict[str, str] = {}
     for canonical, options in HEADER_MAP.items():
         for i, h in enumerate(norm):
             if h in options:
@@ -72,7 +77,7 @@ def build_field_map(headers: list[str]) -> dict[str, str]:
         raise ValueError(f"Missing required columns: {missing}\nHeaders: {headers}")
     return mapping
 
-def to_bool_int(s: str | None) -> int | None:
+def to_bool_int(s: Optional[str]) -> Optional[int]:
     """Return 1/0 from Yes/No-like values; None if unknown."""
     if s is None:
         return None
@@ -83,12 +88,12 @@ def to_bool_int(s: str | None) -> int | None:
         return 0
     return None
 
-def parse_date(d: str) -> tuple[str, int]:
+def parse_date(d: str) -> Tuple[str, int]:
     d = (d or "").strip()
     obj = dt.datetime.strptime(d, "%d/%m/%Y").date()
     return obj.isoformat(), obj.year
 
-def parse_price(p: str | None) -> tuple[int | None, str]:
+def parse_price(p: Optional[str]) -> Tuple[Optional[int], str]:
     """
     Return (euros_without_cents, original_text), robust across US/EU formats.
 
@@ -125,7 +130,7 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
         if 1 <= digits_after <= 2:
             integer_part = s[:idx]
         else:
-            integer_part = s  # it's just a thousands separator
+            integer_part = s  # separator is thousands, not decimal
 
     # Remove any remaining non-digits (like thousands separators) and parse
     integer_digits = re.sub(r"[^0-9-]", "", integer_part)
@@ -139,7 +144,7 @@ def parse_price(p: str | None) -> tuple[int | None, str]:
 
     return euros, original
 
-def fix_hundred_inflation(euros: int | None, price_text: str | None) -> int | None:
+def fix_hundred_inflation(euros: Optional[int], price_text: Optional[str]) -> Optional[int]:
     """
     Final safety clamp: if original text ends with decimal cents (…[.,]dd),
     and our integer appears to have kept those two digits (×100 bug),
@@ -161,6 +166,49 @@ def fix_hundred_inflation(euros: int | None, price_text: str | None) -> int | No
 def sanitize_filename(s: str) -> str:
     s = (s or "").strip().lower().replace(" ", "_")
     return re.sub(r"[^a-z0-9_\-]", "", s) or "unknown"
+
+class RotatingNDJSONWriter:
+    """
+    Writes NDJSON lines to <base>.ndjson, rotating to <base>_part02.ndjson, etc.,
+    once the current file would exceed ROTATE_MAX_BYTES.
+    """
+    def __init__(self, base_path: Path, max_bytes: int = ROTATE_MAX_BYTES):
+        self.base_path = base_path
+        self.max_bytes = max_bytes
+        self.part = 1
+        self.cur_path = None  # type: Optional[Path]
+        self.cur_f = None     # type: Optional[io.TextIOWrapper]
+        self.cur_bytes = 0
+        self.paths: List[Path] = []
+        self._open_new()
+
+    def _open_new(self):
+        if self.cur_f:
+            self.cur_f.close()
+        if self.part == 1:
+            path = self.base_path
+        else:
+            stem = self.base_path.with_suffix("").name
+            path = self.base_path.with_name(f"{stem}_part{self.part:02d}.ndjson")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.cur_path = path
+        self.cur_f = path.open("w", encoding="utf-8", newline="\n")
+        self.cur_bytes = 0
+        self.paths.append(path)
+
+    def write_line(self, line: str):
+        b = len(line.encode("utf-8"))
+        if self.cur_bytes + b > self.max_bytes:
+            self.part += 1
+            self._open_new()
+        assert self.cur_f is not None
+        self.cur_f.write(line)
+        self.cur_bytes += b
+
+    def close(self):
+        if self.cur_f:
+            self.cur_f.close()
+            self.cur_f = None
 
 def open_ndjson_writer(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -257,6 +305,9 @@ def main() -> None:
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     log(f"ZIP MD5: {zip_md5}")
 
+    manifest: Dict[str, List[str]] = {}  # year -> list of shard paths (relative to repo root)
+    shard_sizes: Dict[str, List[int]] = {}
+
     with zipfile.ZipFile(tmp_zip, "r") as zf:
         member = pick_csv_member(zf)
         log(f"CSV member: {member.filename}")
@@ -275,12 +326,7 @@ def main() -> None:
         headers = next(reader)
         field_map = build_field_map(headers)
 
-        # Prepare writers (write to snapshot + shards)
-        all_path = snapshot_dir / "all.ndjson"
-        by_county_dir = snapshot_dir / "by-county"
-        by_county_dir.mkdir(parents=True, exist_ok=True)
-
-        # clear shard dir (we fully re-build)
+        # Clear shard dir (we fully re-build)
         if SHARDS_DIR.exists():
             for p in SHARDS_DIR.glob("*.ndjson"):
                 p.unlink()
@@ -292,97 +338,93 @@ def main() -> None:
             "zip_member": member.filename,
             "generated_at_utc": dt.datetime.utcnow().isoformat() + "Z",
             "total_records": 0,
-            "by_year": {},
-            "by_county": {}
+            "by_year": {},   # counts per year
         }
 
-        writers_by_year: dict[int, io.TextIOBase] = {}
-        writers_by_county: dict[str, io.TextIOBase] = {}
-        counts_year: dict[int, int] = {}
-        counts_county: dict[str, int] = {}
+        writers_by_year: Dict[int, RotatingNDJSONWriter] = {}
+        counts_year: Dict[int, int] = {}
 
-        with open_ndjson_writer(all_path) as all_f:
-            sio.seek(0)
-            dict_reader = csv.DictReader(sio, fieldnames=headers, dialect=dialect)
-            next(dict_reader)  # skip header
+        sio.seek(0)
+        dict_reader = csv.DictReader(sio, fieldnames=headers, dialect=dialect)
+        next(dict_reader)  # skip header
 
-            for idx, row in enumerate(dict_reader, start=1):
-                def get(canon: str) -> str | None:
-                    col = field_map.get(canon)
-                    return (row.get(col) if col else None)
+        for idx, row in enumerate(dict_reader, start=1):
+            def get(canon: str) -> Optional[str]:
+                col = field_map.get(canon)
+                return (row.get(col) if col else None)
 
-                # Date
-                try:
-                    iso_date, year = parse_date(get("date") or "")
-                except Exception:
-                    # skip malformed dates
-                    continue
+            # Date
+            try:
+                iso_date, year = parse_date(get("date") or "")
+            except Exception:
+                # skip malformed dates
+                continue
 
-                # Price (parse + safety clamp)
-                price_eur, price_text = parse_price(get("price_text"))
-                price_eur = fix_hundred_inflation(price_eur, price_text)
+            # Price (parse + safety clamp)
+            price_eur, price_text = parse_price(get("price_text"))
+            price_eur = fix_hundred_inflation(price_eur, price_text)
 
-                # Other fields
-                address = (get("address") or "").strip()
-                county = (get("county") or "").strip()
-                eircode_raw = (get("eircode") or "").strip()
-                eircode = eircode_raw if eircode_raw else "NONE"
-                nfm_int = to_bool_int(get("not_full_market_price"))
-                vat_int = to_bool_int(get("vat_exclusive"))
-                prop_desc = (get("property_description") or "").strip() or None
-                size_desc = (get("property_size_description") or "").strip() or None
+            # Other fields
+            address = (get("address") or "").strip()
+            county = (get("county") or "").strip()
+            eircode_raw = (get("eircode") or "").strip()
+            eircode = eircode_raw if eircode_raw else "NONE"
+            nfm_int = to_bool_int(get("not_full_market_price"))
+            vat_int = to_bool_int(get("vat_exclusive"))
+            prop_desc = (get("property_description") or "").strip() or None
+            size_desc = (get("property_size_description") or "").strip() or None
 
-                county_norm = county.title().replace("Co.", "Co.").strip()
+            county_norm = county.title().replace("Co.", "Co.").strip()
 
-                rec = {
-                    "id": hashlib.sha1("|".join([iso_date, address, county_norm, price_text]).encode("utf-8")).hexdigest(),
-                    "date": iso_date,
-                    "address": address,
-                    "county": county_norm,
-                    "eircode": eircode,
-                    "price_eur": price_eur,
-                    "price_text": price_text,
-                    "nfm": nfm_int if nfm_int is not None else 0,
-                    "vat_exclusive": vat_int if vat_int is not None else 0,
-                    "description": prop_desc,
-                    "property_size_description": size_desc,
-                    "source": "Property Price Register",
-                    "source_url": PPR_URL,
-                    "row_number": idx
-                }
+            rec = {
+                "id": hashlib.sha1("|".join([iso_date, address, county_norm, price_text or ""]).encode("utf-8")).hexdigest(),
+                "date": iso_date,
+                "address": address,
+                "county": county_norm,
+                "eircode": eircode,
+                "price_eur": price_eur,
+                "price_text": price_text,
+                "nfm": nfm_int if nfm_int is not None else 0,
+                "vat_exclusive": vat_int if vat_int is not None else 0,
+                "description": prop_desc,
+                "property_size_description": size_desc,
+                "source": "Property Price Register",
+                "source_url": PPR_URL,
+                "row_number": idx
+            }
 
-                line = json.dumps(rec, ensure_ascii=False) + "\n"
-                all_f.write(line)
+            line = json.dumps(rec, ensure_ascii=False) + "\n"
 
-                # shards/by-year
-                ypath = SHARDS_DIR / f"{year}.ndjson"
-                if year not in writers_by_year:
-                    writers_by_year[year] = open_ndjson_writer(ypath)
-                    counts_year[year] = 0
-                writers_by_year[year].write(line)
-                counts_year[year] += 1
+            # shards/by-year with rotation
+            ybase = SHARDS_DIR / f"{year}.ndjson"
+            if year not in writers_by_year:
+                writers_by_year[year] = RotatingNDJSONWriter(ybase, ROTATE_MAX_BYTES)
+                counts_year[year] = 0
+            writers_by_year[year].write_line(line)
+            counts_year[year] += 1
+            summary["total_records"] += 1
 
-                # api/v1/<md5>/by-county
-                ckey = county_norm
-                cpath = by_county_dir / f"{sanitize_filename(ckey)}.ndjson"
-                if ckey not in writers_by_county:
-                    writers_by_county[ckey] = open_ndjson_writer(cpath)
-                    counts_county[ckey] = 0
-                writers_by_county[ckey].write(line)
-                counts_county[ckey] += 1
-
-                summary["total_records"] += 1
-
-        for f in writers_by_year.values():
-            f.close()
-        for f in writers_by_county.values():
-            f.close()
+        # Close writers and collect manifest entries + sizes
+        for year, w in writers_by_year.items():
+            w.close()
+            paths = [str(p.relative_to(ROOT)) for p in w.paths]
+            manifest[str(year)] = paths
+            sizes = [Path(ROOT, p).stat().st_size for p in paths]
+            shard_sizes[str(year)] = sizes
 
         summary["by_year"] = {str(y): counts_year[y] for y in sorted(counts_year)}
-        summary["by_county"] = dict(sorted(counts_county.items(), key=lambda kv: kv[0].lower()))
 
-        with (snapshot_dir / "summary.json").open("w", encoding="utf-8") as sf:
-            json.dump(summary, sf, ensure_ascii=False, indent=2)
+    # Snapshot files (small): summary + manifest
+    snapshot_dir = API_DIR / zip_md5
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    (snapshot_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (snapshot_dir / "manifest.json").write_text(json.dumps({
+        "version": zip_md5,
+        "generated_at_utc": summary["generated_at_utc"],
+        "years": manifest,              # year -> list of relative shard paths
+        "sizes": shard_sizes,           # year -> list of sizes (bytes)
+        "shards_root": str(SHARDS_DIR.relative_to(ROOT)),
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # Update meta.json
     meta = {}
@@ -394,7 +436,7 @@ def main() -> None:
     previous = meta.get("latest_version")
     meta.update({
         "latest_version": zip_md5,
-        "generated_at_utc": dt.datetime.utcnow().isoformat() + "Z",
+        "generated_at_utc": summary["generated_at_utc"],
         "source_url": PPR_URL,
         "total_records": summary["total_records"],
         "previous_version": previous,

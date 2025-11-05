@@ -87,45 +87,51 @@ def parse_date(d: str) -> tuple[str,int]:
 def parse_price(p: str | None) -> tuple[int | None, str]:
     """
     Parse a price string and return (euros_without_cents, original_text).
-    Examples:
-      "Ä145,000.00" -> (145000, "Ä145,000.00")
-      "Ä154,185.02" -> (154185, "Ä154,185.02")
-      "€ 1.234.567,89" -> (1234567, "€ 1.234.567,89")
+
+    Rules:
+      - Strip euro symbols/mojibake (€, â‚¬, Ä, EUR) and spaces.
+      - If both '.' and ',' appear, treat the **rightmost** of them as the decimal
+        separator; drop the fractional part.
+      - If only one of '.' or ',' appears, treat it as decimal *only if* it has
+        1–2 digits after it; otherwise treat it as a thousands separator.
+      - Remove all thousands separators and return an integer.
     """
+    import re
     if p is None:
         return None, ""
     original = (p or "").strip()
 
-    # Remove euro artifacts and whitespace
-    tmp = original
+    s = original
     for art in ("€", "â‚¬", "Ä", "EUR", "eur"):
-        tmp = tmp.replace(art, "")
-    tmp = tmp.replace("\xa0", "").replace(" ", "")
+        s = s.replace(art, "")
+    s = s.replace("\xa0", "").replace(" ", "")
+    s = re.sub(r"[^0-9\.,-]", "", s)
+    if not s:
+        return None, original
 
-    # Keep only digits, '.' and ','
-    import re
-    tmp = re.sub(r"[^0-9\.,-]", "", tmp)
+    has_dot = "." in s
+    has_comma = "," in s
 
-    # Normalize separators:
-    # - If both '.' and ',' exist, treat ',' as thousands and '.' as decimal (matches PPR like "154,185.02").
-    # - If only ',' exists, treat it as decimal.
-    # - Else, ',' is thousands and '.' is decimal (or integer).
-    if "." in tmp and "," in tmp:
-        tmp = tmp.replace(",", "")          # remove thousands
-        # now '.' is decimal
-    elif "," in tmp and "." not in tmp:
-        tmp = tmp.replace(".", "")
-        tmp = tmp.replace(",", ".")         # make decimal '.'
-    else:
-        tmp = tmp.replace(",", "")          # remove thousands if any
+    integer_part = s
+    if has_dot and has_comma:
+        # Decimal is the rightmost separator of either kind
+        idx = max(s.rfind("."), s.rfind(","))
+        integer_part = s[:idx]
+    elif has_dot or has_comma:
+        sep = "." if has_dot else ","
+        idx = s.rfind(sep)
+        digits_after = len(re.sub(r"[^0-9]", "", s[idx+1:]))
+        if 1 <= digits_after <= 2:
+            integer_part = s[:idx]
+        else:
+            integer_part = s  # it's a thousands separator
 
-    # Drop the cents (anything after the decimal point)
-    if "." in tmp:
-        tmp = tmp.split(".", 1)[0]
+    integer_digits = re.sub(r"[^0-9-]", "", integer_part)
+    if integer_digits in ("", "-"):
+        return None, original
 
-    # Convert to integer euros
     try:
-        euros = int(tmp) if tmp else None
+        euros = int(integer_digits)
     except ValueError:
         euros = None
 

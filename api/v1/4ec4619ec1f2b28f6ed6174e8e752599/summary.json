@@ -1,15 +1,15 @@
 {
   "source": "Property Price Register",
   "source_url": "https://www.propertypriceregister.ie/website/npsra/ppr/npsra-ppr.nsf/Downloads/PPR-ALL.zip/$FILE/PPR-ALL.zip",
-  "zip_md5": "e82caf97f094c5e1804ae0e36c223eba",
+  "zip_md5": "9bf2df8d529319fb5649b871a1a231b3",
   "zip_member": "PPR-ALL.csv",
-  "generated_at_utc": "2026-11-18T06:29:41.277193Z",
-  "total_records": 816974,
+  "generated_at_utc": "2026-11-25T06:31:14.840918Z",
+  "total_records": 818252,
   "by_year": {
     "2010": 21006,
     "2011": 18446,
     "2012": 25375,
-    "2013": 30227,
+    "2013": 30228,
     "2014": 43676,
     "2015": 49166,
     "2016": 49941,
@@ -20,9 +20,9 @@
     "2021": 59608,
     "2022": 62767,
     "2023": 63390,
-    "2024": 61573,
-    "2025": 62106,
-    "2026": 48572
+    "2024": 61574,
+    "2025": 62108,
+    "2026": 49846
   },
   "endpoint_token_used": true,
   "snapshot_id": "4ec4619ec1f2b28f6ed6174e8e752599"
